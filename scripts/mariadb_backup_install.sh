@@ -9,21 +9,16 @@ set -euo pipefail
 # -------------------- 1) Default configuration --------------------
 cat >/etc/db-backup.conf <<'CFG'
 # ========= MariaDB Backup Configuration =========
-# Database credentials (leave DB_PASS empty if unix‑socket auth works)
-DB_USER="root"
-DB_PASS=""                  # empty means "no -p option"
-DB_NAME="table_name"        # or --all-databases
+DB_USER="root"          # leave DB_PASS empty if unix‑socket auth works
+DB_PASS=""
+DB_NAME="veritabani_adi"        # or --all-databases
 
-# Storage parameters
 BACKUP_DIR="/var/backups/sql"
-MAX_DIR_SIZE=$((20*1024*1024*1024))   # 20 GB cap for the directory
-MAX_RETRY=3                            # dump retries inside the script
+MAX_DIR_SIZE=$((20*1024*1024*1024))   # 20 GB
+MAX_RETRY=3
 
-# Compression – pigz is multi‑core gzip; falls back to gzip if not found
-COMPRESS_CMD="pigz -p4"
-
-# Schedule – space‑separated list of HH:MM entries (24 h)
-RUN_ATS="02:00 10:00 18:00"           # three dumps per day
+COMPRESS_CMD="pigz -p4"               # falls back to gzip automatically
+RUN_ATS="02:00 10:00 18:00"           # space‑separated HH:MM list
 CFG
 chmod 600 /etc/db-backup.conf
 
@@ -33,15 +28,13 @@ cat >/usr/local/bin/db_backup_rotate.sh <<'BKP'
 set -uo pipefail
 source /etc/db-backup.conf
 
-# fall back to gzip if pigz not present
-if ! command -v pigz &>/dev/null; then COMPRESS_CMD="gzip"; fi
+command -v pigz &>/dev/null || COMPRESS_CMD="gzip"
 
 mkdir -p "$BACKUP_DIR"
 cd "$BACKUP_DIR"
 DATE_FMT=$(date +'%Y-%m-%d_%H-%M')
 tmp="${DB_NAME}_${DATE_FMT}.sql.gz.part"
 
-# Dump options for minimal locking
 DUMP_OPTS="--single-transaction --quick --skip-lock-tables --routines --events"
 MYSQL_CRED="-u\"$DB_USER\""
 [[ -n "$DB_PASS" ]] && MYSQL_CRED+=" -p\"$DB_PASS\""
@@ -89,13 +82,13 @@ Restart=on-failure
 RestartSec=30
 SERV
 
-# -------------------- 4) Timer creator function ------------------
+# -------------------- 4) Timer creator ----------------------------
 create_timer() {
   local times=( $RUN_ATS )
   local cal=""
   for t in "${times[@]}"; do
     [[ -n "$cal" ]] && cal+=";"
-    cal+="*-*-* ${t}"
+    cal+="*-*-* ${t}:00"
   done
 
   cat >/etc/systemd/system/db-backup.timer <<TMR
@@ -112,16 +105,15 @@ WantedBy=timers.target
 TMR
 }
 
-# -------------------- 5) Initial timer creation ------------------
+# -------------------- 5) Initial timer ----------------------------
 source /etc/db-backup.conf
 create_timer
 
-# -------------------- 6) Helper to reload schedule ---------------
+# -------------------- 6) Helper for schedule changes --------------
 cat >/usr/local/bin/db_backup_update <<'UPD'
 #!/usr/bin/env bash
 set -euo pipefail
 source /etc/db-backup.conf
-
 sudo bash -c "$(declare -f create_timer); create_timer"
 sudo systemctl daemon-reload
 sudo systemctl restart db-backup.timer
@@ -129,7 +121,7 @@ echo "Timer updated to new schedule: $RUN_ATS"
 UPD
 chmod +x /usr/local/bin/db_backup_update
 
-# -------------------- 7) Enable & start --------------------------
+# -------------------- 7) Enable & start ---------------------------
 systemctl daemon-reload
 systemctl enable --now db-backup.timer
 
