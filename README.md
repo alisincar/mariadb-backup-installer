@@ -23,7 +23,7 @@
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/alisincar/mariadb-backup-installer/main/scripts/mariadb_backup_install.sh)"
 ```
 
-> Replace `<YOUR_USER>` with your GitHub username or fork URL.
+> Replace `alisincar` with your GitHub username or fork URL.
 
 The installer will:
 
