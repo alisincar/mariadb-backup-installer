@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------
 #  MariaDB Backup Package – multi‑daily, low‑impact, size‑aware
-#  Run once as root: it installs everything.  Afterwards edit
+#  Run once as root: it installs everything. Afterwards edit
 #  /etc/db-backup.conf and run db_backup_update to apply changes.
 # ------------------------------------------------------------
 set -euo pipefail
@@ -9,9 +9,7 @@ set -euo pipefail
 # -------------------- 1) Default configuration --------------------
 cat >/etc/db-backup.conf <<'CFG'
 # ========= MariaDB Backup Configuration =========
-# Database credentials
-#  If your Ubuntu root user authenticates via the unix‑socket plugin
-#  ("mysql" command works without password), leave DB_PASS empty.
+# Database credentials (leave DB_PASS empty if unix‑socket auth works)
 DB_USER="root"
 DB_PASS=""                  # empty means "no -p option"
 DB_NAME="table_name"        # or --all-databases
@@ -24,8 +22,8 @@ MAX_RETRY=3                            # dump retries inside the script
 # Compression – pigz is multi‑core gzip; falls back to gzip if not found
 COMPRESS_CMD="pigz -p4"
 
-# Schedule – space separated list of HH:MM entries (24 h clock)
-RUN_ATS="02:00 10:00 18:00"          # three dumps per day
+# Schedule – space‑separated list of HH:MM entries (24 h)
+RUN_ATS="02:00 10:00 18:00"           # three dumps per day
 CFG
 chmod 600 /etc/db-backup.conf
 
@@ -43,13 +41,8 @@ cd "$BACKUP_DIR"
 DATE_FMT=$(date +'%Y-%m-%d_%H-%M')
 tmp="${DB_NAME}_${DATE_FMT}.sql.gz.part"
 
-# ------------- Dump with minimal locking -------------------
-# --single-transaction avoids global read locks for InnoDB
-# --quick streams rows, reducing RAM
-# --skip-lock-tables avoids MyISAM locks
+# Dump options for minimal locking
 DUMP_OPTS="--single-transaction --quick --skip-lock-tables --routines --events"
-
-# Build credentials parameters
 MYSQL_CRED="-u\"$DB_USER\""
 [[ -n "$DB_PASS" ]] && MYSQL_CRED+=" -p\"$DB_PASS\""
 
@@ -65,7 +58,6 @@ done
 new_size=$(stat -c%s "$tmp")
 dir_size=$(du -sb "$BACKUP_DIR" | awk '{print $1}')
 
-# ------------- Delete oldest files until we have room ----------
 while (( dir_size + new_size > MAX_DIR_SIZE )); do
   oldest=$(ls -1tr "$BACKUP_DIR" | grep -v '\.part$' | head -n 1)
   [[ -z "$oldest" ]] && { echo "No files left to delete!" >&2; break; }
@@ -103,7 +95,7 @@ create_timer() {
   local cal=""
   for t in "${times[@]}"; do
     [[ -n "$cal" ]] && cal+=";"
-    cal+="*-*-* ${t}:00"
+    cal+="*-*-* ${t}"
   done
 
   cat >/etc/systemd/system/db-backup.timer <<TMR
@@ -130,7 +122,7 @@ cat >/usr/local/bin/db_backup_update <<'UPD'
 set -euo pipefail
 source /etc/db-backup.conf
 
-sudo bash -c "$(declare -f create_timer); create_timer"   # regenerate timer file
+sudo bash -c "$(declare -f create_timer); create_timer"
 sudo systemctl daemon-reload
 sudo systemctl restart db-backup.timer
 echo "Timer updated to new schedule: $RUN_ATS"
