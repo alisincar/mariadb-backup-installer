@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# MariaDB Backup Installer – v1.5  (separate OnCalendar lines)
+# MariaDB Backup Installer – v1.6 (daily‑time OnCalendar lines)
 set -euo pipefail
 
-# ---------- 1) default config ----------
+# ---------- 1) Default configuration ----------
 cat >/etc/db-backup.conf <<'CFG'
-DB_USER="root"
+# ===== MariaDB Backup Configuration =====
+DB_USER="root"           # leave DB_PASS empty if unix‑socket auth works
 DB_PASS=""
-DB_NAME="veritabani_adi"      # or --all-databases
+DB_NAME="veritabani_adi" # or --all-databases
 
 BACKUP_DIR="/var/backups/sql"
 MAX_DIR_SIZE=$((20*1024*1024*1024))   # 20 GB
 MAX_RETRY=3
-COMPRESS_CMD="pigz -p4"
+COMPRESS_CMD="pigz -p4"               # auto‑falls back to gzip
 
-# space‑separated list of HH:MM
+# Space‑separated list of HH:MM times (24 h)
 RUN_ATS="02:00 10:00 18:00"
 CFG
 chmod 600 /etc/db-backup.conf
 
-# ---------- 2) backup script (unchanged) ----------
+# ---------- 2) Backup script ----------
 cat >/usr/local/bin/db_backup_rotate.sh <<'BKP'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -50,7 +51,7 @@ mv "$tmp" "${tmp%.part}"
 BKP
 chmod +x /usr/local/bin/db_backup_rotate.sh
 
-# ---------- 3) service ----------
+# ---------- 3) systemd service ----------
 cat >/etc/systemd/system/db-backup.service <<'SERV'
 [Unit]
 Description=MariaDB dump + rotation
@@ -77,7 +78,8 @@ create_timer() {
     echo ""
     echo "[Timer]"
     for t in "${times[@]}"; do
-      echo "OnCalendar=*-*-* ${t}:00"
+      [[ "$t" =~ :[0-9]{2}$ ]] || t="${t}:00"   # saniye ekle
+      echo "OnCalendar=$t"                     # günlük tetikleme
     done
     echo "Persistent=true"
     echo "RandomizedDelaySec=3min"
